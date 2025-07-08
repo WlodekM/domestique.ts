@@ -1,5 +1,5 @@
 // deno-lint-ignore-file no-explicit-any no-case-declarations
-import { EventEmitter } from 'node:events'
+import { EventEmitter } from 'eventemitter3'
 
 interface Channel {
 	id: string
