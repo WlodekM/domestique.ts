@@ -197,7 +197,7 @@ class CGuild {
 	}
 }
 
-class CChannel {
+export class CChannel {
 	_cache: CacheMonster
 	id: string
 	name: string
@@ -422,39 +422,47 @@ export class Client extends EventEmitter {
 		// deno-lint-ignore no-this-alias
 		const client = this;
 		this.ws.addEventListener('message', async (e) => {
-			// console.debug(`INC`, e.data)
+			console.debug(`INC`, e.data)
 			const data: AvailablePacket | WsPacket = JSON.parse(e.data);
 			switch (data.type) {
 				case 'guildAvailable':
-					this._guilds.push((data as AvailablePacket).payload.uuid)
+					client._guilds.push((data as AvailablePacket).payload.uuid)
 					break;
 				
 				case 'channelAvailable':
-					this._channels.push((data as AvailablePacket).payload.uuid)
+					client._channels.push((data as AvailablePacket).payload.uuid)
 					break;
 				
 				case 'serverFinished':
-					this.self = new SelfUser(await this.cache.getUser(this.userId) as User, client)
-					this.emit('ready');
+					client.self = new SelfUser(await client.cache.getUser(client.userId) as User, client)
+					client.emit('ready');
 					break;
 				
 				case 'messageCreate':
-					const message = this.guilds.loaded((data as unknown as any).payload.guildId) &&
-						(await this.guilds.get((data as unknown as any).payload.guildId)).channels
-						.loaded((data as unknown as any).payload.channelId) ? 
-						new CMessage(this.cache,
+					const channelLoaded: boolean =
+					client.guilds.loaded((data as unknown as any).payload.guildId) &&
+						(await client.guilds.get((data as unknown as any).payload.guildId)).channels
+						.loaded((data as unknown as any).payload.channelId);
+					const message = channelLoaded ? 
+						new CMessage(client.cache,
 							(data as unknown as {payload: Message}).payload,
-							await (await this.guilds.get((data as unknown as any).payload.guildId)).channels
+							await (await client.guilds.get((data as unknown as any).payload.guildId)).channels
 							.get((data as unknown as any).payload.channelId)) :
-						new UnloadedChannelMessage(this.cache, (data as unknown as {payload: Message}).payload, this.guilds);
+						new UnloadedChannelMessage(client.cache, (data as unknown as {payload: Message}).payload, client.guilds);
 
 					await message.load();
 					
-					this.emit('message', {
+					client.emit('message', {
 						message: message,
 						guild: (data as unknown as any).payload.guildId,
 						channel: (data as unknown as any).payload.channelId
 					})
+					if (channelLoaded) {
+						const channel = await (await client.guilds
+							.get((data as unknown as any).payload.guildId)).channels
+							.get((data as unknown as any).payload.channelId);
+						channel.messages.unshift(message as CMessage)
+					}
 					break;
 			}
 		})
