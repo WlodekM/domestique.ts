@@ -207,6 +207,8 @@ class CChannel {
 	messages: CMessage[] = [];
 	loaded: boolean = false
 	async load() {
+		if (this.loaded)
+			return;
 		if (!this._cache.token)
 			throw 'Cannot fetch messages when not logged in';
 		const resp = await fetch(`${this._cache.apiUrl}/api/v0/data/messages/${this.id}`, {
@@ -355,7 +357,7 @@ class ChannelManager {
 			return this.channelCache[id]
 		const channel = new CChannel(this.cache, await this.cache.getChannel(id), this.guild);
 		this.channelCache[id] = channel;
-		await channel.load()
+		// await channel.load()
 		return channel
 	}
 	loaded(id: string) {
