@@ -33,6 +33,19 @@ interface AvailablePacket extends WsPacket {
 	}
 }
 
+interface AuthStatusPacket extends WsPacket {
+	type: 'authStatus'
+	payload: ({
+		success: true
+		error: string
+	} | {
+		success: false
+	}) & {
+		userId: string
+		error?: string
+	}
+}
+
 interface Message {
 	messageId: string
 	authorId: string
@@ -176,6 +189,7 @@ class CGuild {
 	channels: ChannelManager;
 	_channels: string[] = [];
 	loaded: boolean = false
+	// deno-lint-ignore require-await
 	async load() {
 		// if (!this._cache.token)
 		// 	throw 'Cannot fetch channels when not logged in';
@@ -273,6 +287,7 @@ export class CMessage {
 	guild = {
 		/** @private @type {CMessage} */
 		message: undefined as unknown as CMessage,
+		// deno-lint-ignore require-await
 		async get(): Promise<CGuild> {
 			return this.message._guildData as CGuild
 		}
@@ -280,6 +295,7 @@ export class CMessage {
 	channel = {
 		/** @private @type {CMessage} */
 		message: undefined as unknown as CMessage,
+		// deno-lint-ignore require-await
 		async get(): Promise<CChannel> {
 			return this.message._channelData as CChannel
 		}
@@ -353,15 +369,15 @@ class ChannelManager {
 	cache: CacheMonster;
 	guild: CGuild
 	async get(id: string) {
-		if (this.loaded(id))
-			return this.channelCache[id]
+		if (this.cache.has('channelClasses', id))
+			return this.cache.get('channelClasses', id)
 		const channel = new CChannel(this.cache, await this.cache.getChannel(id), this.guild);
-		this.channelCache[id] = channel;
+		this.cache.set('channelClasses', id, channel);
 		// await channel.load()
 		return channel
 	}
 	loaded(id: string) {
-		return this.channelCache[id] !== undefined
+		return this.cache.has('channelClasses', id)
 	}
 	constructor(cache: CacheMonster, guild: CGuild) {
 		this.cache = cache;
@@ -373,15 +389,15 @@ class GuildManager {
 	guildCache: Record<string, CGuild> = {};
 	cache: CacheMonster;
 	async get(id: string) {
-		if (this.loaded(id))
-			return this.guildCache[id]
+		if (this.cache.has('guildClasses', id))
+			return this.cache.get('guildClasses', id)
 		const guild = new CGuild(this.cache, await this.cache.getGuild(id));
-		this.guildCache[id] = guild;
+		this.cache.set('guildClasses', id, guild);
 		await guild.load()
 		return guild
 	}
 	loaded(id: string) {
-		return this.guildCache[id] !== undefined
+		return this.cache.has('guildClasses', id)
 	}
 	channelLoaded(id: string) {
 		const [guildId] = Object.entries(this.guildCache)
@@ -423,8 +439,12 @@ export class Client extends EventEmitter {
 		const client = this;
 		this.ws.addEventListener('message', async (e) => {
 			console.debug(`INC`, e.data)
-			const data: AvailablePacket | WsPacket = JSON.parse(e.data);
+			const data: AuthStatusPacket | AvailablePacket | WsPacket = JSON.parse(e.data);
 			switch (data.type) {
+				case 'authStatus':
+					client.userId = (data as AuthStatusPacket).payload.userId
+					break;
+
 				case 'guildAvailable':
 					client._guilds.push((data as AvailablePacket).payload.uuid)
 					break;
@@ -465,6 +485,7 @@ export class Client extends EventEmitter {
 					}
 					break;
 			}
+			client.emit(data.type, data)
 		})
 	}
 	constructor(wsurl: string = "wss://api.chat.eqilia.eu/api/v0/live/ws", apiurl: string = "https://api.chat.eqilia.eu") {
@@ -492,8 +513,28 @@ export class Client extends EventEmitter {
 		const json: ApiResponse<LoginResponseData> = await resp.json();
 		if (json.error != 0)
 			throw `Error while logging in. Error: ${json.message}`;
-		this.userId = json.payload.userId;
 		this.token = json.payload.token;
 		this.connect()
+	}
+	loginToken(token: string): Promise<void> {
+		if (this.ws && this.ws.readyState == this.ws.OPEN)
+			this.ws.close();
+		this.token = token;
+		this.connect()
+		return new Promise((resolve, reject) => {
+			function handleAuthStatus(data: AuthStatusPacket) {
+				if (!data.payload.success)
+					return reject(data.payload.error?.toString())
+				resolve()
+			}
+			this.once('authStatus', handleAuthStatus)
+			// deno-lint-ignore no-this-alias
+			const client = this;
+			setTimeout(function () {
+				client.off('authStatus', handleAuthStatus);
+				reject('authStatus timeout');
+			}, 5000)
+		})
+		// authStatus
 	}
 }
