@@ -15,7 +15,7 @@ interface Guild {
 	channelIds: string[]
 }
 
-interface User {
+export interface User {
 	username: string,
 	verified: number,
 	displayName: string,
@@ -141,7 +141,7 @@ class CacheMonster extends CacheManager {
 	}
 }
 
-class CUser {
+export class CUser {
 	username: string
 	verified: number
 	displayName: string
@@ -295,7 +295,7 @@ export class CMessage {
 		this._author = message.authorId
 		this._guild = message.guildId
 		this._channel = message.channelId
-		this.timestamp = new Date(message.timestamp * 1000);
+		this.timestamp = new Date(message.timestamp);
 		this.content = message.content
 		this._channelData = channel
 		this._guildData = channel.guild;
@@ -340,7 +340,7 @@ class UnloadedChannelMessage {
 		this._author = message.authorId
 		this._guild = message.guildId
 		this._channel = message.channelId
-		this.timestamp = new Date(message.timestamp * 1000);
+		this.timestamp = new Date(message.timestamp);
 		this.content = message.content
 		this.guildManager = guildManager
 		this.guild.message = this;
