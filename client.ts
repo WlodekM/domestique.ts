@@ -81,6 +81,13 @@ class CacheManager {
 			return undefined;
 		return this.cache[category][item] != undefined
 	}
+	hasCategory(category: string) {
+		return this.cache[category] != undefined
+	}
+	/** create or delete, actually */
+	createCategory(category: string) {
+		this.cache[category] = {}
+	}
 	remove(category: string, item: string) {
 		if (this.cache[category] == undefined)
 			return undefined;
@@ -96,10 +103,6 @@ class CacheMonster extends CacheManager {
 	constructor(apiUrl: string) {
 		super()
 		this.apiUrl = apiUrl;
-	}
-	/** create or delete, actually */
-	createCategory(category: string) {
-		this.cache[category] = {}
 	}
 	async getUser(id: string): Promise<User> {
 		if (this.has('users', id))
@@ -382,6 +385,8 @@ class ChannelManager {
 	constructor(cache: CacheMonster, guild: CGuild) {
 		this.cache = cache;
 		this.guild = guild;
+		if (!cache.hasCategory('channelClasses'))
+			cache.createCategory('channelClasses')
 	}
 }
 
@@ -408,6 +413,8 @@ class GuildManager {
 	}
 	constructor(cache: CacheMonster) {
 		this.cache = cache;
+		if (!cache.hasCategory('guildClasses'))
+			cache.createCategory('guildClasses')
 	}
 }
 
