@@ -8,7 +8,7 @@ const client = new Client();
 
 await client.login(Deno.env.get('USERNAME') as string, Deno.env.get('PASSWORD') as string);
 
-client.on('ready', async () => {
+client.on('ready', () => {
 	console.log("ready")
 })
 
@@ -23,7 +23,6 @@ client.on('message', async ({ message }: { message: CMessage, channel: string, g
 	console.log(`@${message.author?.username}:`, message.content)
 	if (!message.content.startsWith('/'))
 		return;
-	// deno-lint-ignore no-unused-vars
 	const [command, ...args] = message.content.replace('/', '').split(' ');
 	const channel = await message.channel.get();
 	switch (command) {
