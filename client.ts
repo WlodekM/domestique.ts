@@ -534,7 +534,7 @@ export class Client extends EventEmitter {
 		// deno-lint-ignore no-this-alias
 		const client = this;
 		this.ws.addEventListener('message', async (e) => {
-			console.debug(`INC`, e.data)
+			// console.debug(`INC`, e.data)
 			const data: AuthStatusPacket | AvailablePacket | WsPacket = JSON.parse(e.data);
 			switch (data.type) {
 				case 'authStatus':
