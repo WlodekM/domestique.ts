@@ -1,5 +1,5 @@
 // deno-lint-ignore-file no-explicit-any no-case-declarations
-import { EventEmitter } from 'node:events'
+import { EventEmitter } from 'eventemitter3'
 
 interface Channel {
 	id: string
@@ -15,7 +15,7 @@ interface Guild {
 	channelIds: string[]
 }
 
-interface User {
+export interface User {
 	username: string,
 	verified: number,
 	displayName: string,
@@ -30,6 +30,19 @@ interface AvailablePacket extends WsPacket {
 	type: 'guildAvailable' | 'channelAvailable'
 	payload: {
 		uuid: string
+	}
+}
+
+interface AuthStatusPacket extends WsPacket {
+	type: 'authStatus'
+	payload: ({
+		success: true
+		error: string
+	} | {
+		success: false
+	}) & {
+		userId: string
+		error?: string
 	}
 }
 
@@ -51,6 +64,94 @@ type ApiResponse<t> = {
 	error: 0, payload: t, message?: string
 } | { error: number, payload: t, message: string }
 
+interface QueueRequest {
+	path: string,
+	args: RequestInit,
+	resolve: (response: Response) => void;
+	reject: (...args: any[]) => void;
+}
+
+interface Queue {
+	requests: QueueRequest[],
+	cooldown: number,
+	lock: boolean
+}
+
+
+// will use when v1 comes out
+// deno-lint-ignore no-unused-vars
+class RequestManager {
+	queues: Record<string, Queue> = {};
+	cacheMonster: CacheMonster
+	constructor(cacheMonster: CacheMonster) {
+		this.cacheMonster = cacheMonster;
+	}
+	async doRequest(category: string): Promise<void> {
+		if (!this.queues[category] || this.queues[category].requests.length < 1)
+			throw 'what'
+		if (this.queues[category].lock)
+			return;
+		this.queues[category].lock = true;
+		if (this.queues[category].cooldown < Date.now()) {
+			const remaining = this.queues[category].cooldown - Date.now();
+			setTimeout(()=>{
+				this.queues[category].lock = false;
+				this.doRequest(category)
+			}, remaining);
+			return;
+		}
+		const requestData: QueueRequest = this.queues[category].requests.at(-1) as QueueRequest;
+		let resp
+		try {
+			resp = await fetch(
+				this.cacheMonster.apiUrl+'/api/v1'+requestData.path,
+				requestData.args
+			);
+		} catch (error) {
+			requestData.reject(error)
+			this.queues[category].requests.shift()
+			this.queues[category].lock = false;
+			return;
+		}
+		// ratelimited
+		if (resp.status == 429) {
+			// const json = await resp.json();
+			const remaining: number =
+				+(resp.headers.get("X-Timeout-Remaining-Milliseconds") as string)
+			this.queues[category].cooldown =
+				//@ts-ignore::
+				Date.now()+ remaining;
+			setTimeout(()=>{
+				this.queues[category].lock = false;
+				this.doRequest(category)
+			}, remaining);
+			return;
+		}
+		requestData.resolve(resp);
+		this.queues[category].requests.shift()
+		this.queues[category].lock = false;
+	}
+	fetch(path: string, init: RequestInit): Promise<Response> {
+		return new Promise((resolve, reject) => {
+			const category = path.split('/').slice(0, 2).join('/');
+			if (!this.queues[category])
+				this.queues[category] = {
+					cooldown: -Infinity,
+					requests: [],
+					lock: false
+				};
+			this.queues[category].requests.push({
+				args: init,
+				path,
+				resolve,
+				reject
+			})
+			if (this.queues[category].cooldown < Date.now())
+				this.doRequest(category)
+		})
+	}
+}
+
 class CacheManager {
 	cache: Record<string, Record<string, any>> = {};
 	get(category: string, item: string) {
@@ -68,6 +169,13 @@ class CacheManager {
 			return undefined;
 		return this.cache[category][item] != undefined
 	}
+	hasCategory(category: string) {
+		return this.cache[category] != undefined
+	}
+	/** create or delete, actually */
+	createCategory(category: string) {
+		this.cache[category] = {}
+	}
 	remove(category: string, item: string) {
 		if (this.cache[category] == undefined)
 			return undefined;
@@ -83,10 +191,6 @@ class CacheMonster extends CacheManager {
 	constructor(apiUrl: string) {
 		super()
 		this.apiUrl = apiUrl;
-	}
-	/** create or delete, actually */
-	createCategory(category: string) {
-		this.cache[category] = {}
 	}
 	async getUser(id: string): Promise<User> {
 		if (this.has('users', id))
@@ -141,7 +245,7 @@ class CacheMonster extends CacheManager {
 	}
 }
 
-class CUser {
+export class CUser {
 	username: string
 	verified: number
 	displayName: string
@@ -176,6 +280,7 @@ class CGuild {
 	channels: ChannelManager;
 	_channels: string[] = [];
 	loaded: boolean = false
+	// deno-lint-ignore require-await
 	async load() {
 		// if (!this._cache.token)
 		// 	throw 'Cannot fetch channels when not logged in';
@@ -197,7 +302,7 @@ class CGuild {
 	}
 }
 
-class CChannel {
+export class CChannel {
 	_cache: CacheMonster
 	id: string
 	name: string
@@ -207,6 +312,8 @@ class CChannel {
 	messages: CMessage[] = [];
 	loaded: boolean = false
 	async load() {
+		if (this.loaded)
+			return;
 		if (!this._cache.token)
 			throw 'Cannot fetch messages when not logged in';
 		const resp = await fetch(`${this._cache.apiUrl}/api/v0/data/messages/${this.id}`, {
@@ -271,6 +378,7 @@ export class CMessage {
 	guild = {
 		/** @private @type {CMessage} */
 		message: undefined as unknown as CMessage,
+		// deno-lint-ignore require-await
 		async get(): Promise<CGuild> {
 			return this.message._guildData as CGuild
 		}
@@ -278,6 +386,7 @@ export class CMessage {
 	channel = {
 		/** @private @type {CMessage} */
 		message: undefined as unknown as CMessage,
+		// deno-lint-ignore require-await
 		async get(): Promise<CChannel> {
 			return this.message._channelData as CChannel
 		}
@@ -293,7 +402,7 @@ export class CMessage {
 		this._author = message.authorId
 		this._guild = message.guildId
 		this._channel = message.channelId
-		this.timestamp = new Date(message.timestamp * 1000);
+		this.timestamp = new Date(message.timestamp);
 		this.content = message.content
 		this._channelData = channel
 		this._guildData = channel.guild;
@@ -338,7 +447,7 @@ class UnloadedChannelMessage {
 		this._author = message.authorId
 		this._guild = message.guildId
 		this._channel = message.channelId
-		this.timestamp = new Date(message.timestamp * 1000);
+		this.timestamp = new Date(message.timestamp);
 		this.content = message.content
 		this.guildManager = guildManager
 		this.guild.message = this;
@@ -351,19 +460,21 @@ class ChannelManager {
 	cache: CacheMonster;
 	guild: CGuild
 	async get(id: string) {
-		if (this.loaded(id))
-			return this.channelCache[id]
+		if (this.cache.has('channelClasses', id))
+			return this.cache.get('channelClasses', id)
 		const channel = new CChannel(this.cache, await this.cache.getChannel(id), this.guild);
-		this.channelCache[id] = channel;
-		await channel.load()
+		this.cache.set('channelClasses', id, channel);
+		// await channel.load()
 		return channel
 	}
 	loaded(id: string) {
-		return this.channelCache[id] !== undefined
+		return this.cache.has('channelClasses', id)
 	}
 	constructor(cache: CacheMonster, guild: CGuild) {
 		this.cache = cache;
 		this.guild = guild;
+		if (!cache.hasCategory('channelClasses'))
+			cache.createCategory('channelClasses')
 	}
 }
 
@@ -371,15 +482,15 @@ class GuildManager {
 	guildCache: Record<string, CGuild> = {};
 	cache: CacheMonster;
 	async get(id: string) {
-		if (this.loaded(id))
-			return this.guildCache[id]
+		if (this.cache.has('guildClasses', id))
+			return this.cache.get('guildClasses', id)
 		const guild = new CGuild(this.cache, await this.cache.getGuild(id));
-		this.guildCache[id] = guild;
+		this.cache.set('guildClasses', id, guild);
 		await guild.load()
 		return guild
 	}
 	loaded(id: string) {
-		return this.guildCache[id] !== undefined
+		return this.cache.has('guildClasses', id)
 	}
 	channelLoaded(id: string) {
 		const [guildId] = Object.entries(this.guildCache)
@@ -390,6 +501,8 @@ class GuildManager {
 	}
 	constructor(cache: CacheMonster) {
 		this.cache = cache;
+		if (!cache.hasCategory('guildClasses'))
+			cache.createCategory('guildClasses')
 	}
 }
 
@@ -406,6 +519,7 @@ export class Client extends EventEmitter {
 	userId: string = '';
 	self?: SelfUser
 	guilds: GuildManager;
+	doReconnect: boolean;
 	set token(token: string) {
 		this._token = token;
 		this.cache.token = token;
@@ -420,44 +534,68 @@ export class Client extends EventEmitter {
 		// deno-lint-ignore no-this-alias
 		const client = this;
 		this.ws.addEventListener('message', async (e) => {
-			// console.debug(`INC`, e.data)
-			const data: AvailablePacket | WsPacket = JSON.parse(e.data);
+			console.debug(`INC`, e.data)
+			const data: AuthStatusPacket | AvailablePacket | WsPacket = JSON.parse(e.data);
 			switch (data.type) {
+				case 'authStatus':
+					client.userId = (data as AuthStatusPacket).payload.userId
+					break;
+
 				case 'guildAvailable':
-					this._guilds.push((data as AvailablePacket).payload.uuid)
+					client._guilds.push((data as AvailablePacket).payload.uuid)
 					break;
 				
 				case 'channelAvailable':
-					this._channels.push((data as AvailablePacket).payload.uuid)
+					client._channels.push((data as AvailablePacket).payload.uuid)
 					break;
 				
 				case 'serverFinished':
-					this.self = new SelfUser(await this.cache.getUser(this.userId) as User, client)
-					this.emit('ready');
+					client.self = new SelfUser(await client.cache.getUser(client.userId) as User, client)
+					client.emit('ready');
 					break;
 				
 				case 'messageCreate':
-					const message = this.guilds.loaded((data as unknown as any).payload.guildId) &&
-						(await this.guilds.get((data as unknown as any).payload.guildId)).channels
-						.loaded((data as unknown as any).payload.channelId) ? 
-						new CMessage(this.cache,
+					const channelLoaded: boolean =
+					client.guilds.loaded((data as unknown as any).payload.guildId) &&
+						(await client.guilds.get((data as unknown as any).payload.guildId)).channels
+						.loaded((data as unknown as any).payload.channelId);
+					const message = channelLoaded ? 
+						new CMessage(client.cache,
 							(data as unknown as {payload: Message}).payload,
-							await (await this.guilds.get((data as unknown as any).payload.guildId)).channels
+							await (await client.guilds.get((data as unknown as any).payload.guildId)).channels
 							.get((data as unknown as any).payload.channelId)) :
-						new UnloadedChannelMessage(this.cache, (data as unknown as {payload: Message}).payload, this.guilds);
+						new UnloadedChannelMessage(client.cache, (data as unknown as {payload: Message}).payload, client.guilds);
 
 					await message.load();
 					
-					this.emit('message', {
+					client.emit('message', {
 						message: message,
 						guild: (data as unknown as any).payload.guildId,
 						channel: (data as unknown as any).payload.channelId
 					})
+					if (channelLoaded) {
+						const channel = await (await client.guilds
+							.get((data as unknown as any).payload.guildId)).channels
+							.get((data as unknown as any).payload.channelId);
+						channel.messages.unshift(message as CMessage)
+					}
 					break;
 			}
+			client.emit(data.type, data)
+		})
+		this.ws.addEventListener('close', async () => {
+			if (!client.doReconnect)
+				return;
+			if (!client.token)
+				return;
+			await client.loginToken(client.token)
 		})
 	}
-	constructor(wsurl: string = "wss://api.chat.eqilia.eu/api/v0/live/ws", apiurl: string = "https://api.chat.eqilia.eu") {
+	constructor(
+		wsurl: string = "wss://api.chat.eqilia.eu/api/v0/live/ws",
+		apiurl: string = "https://api.chat.eqilia.eu",
+		doReconnect: boolean = false
+	) {
 		super()
 		this.cache = new CacheMonster(apiurl);
 		this.cache.createCategory('guilds');
@@ -466,6 +604,7 @@ export class Client extends EventEmitter {
 		this.guilds = new GuildManager(this.cache);
 		this.apiUrl = apiurl
 		this.wsUrl = wsurl
+		this.doReconnect = doReconnect;
 	}
 	async login(username: string, password: string) {
 		if (this.ws && this.ws.readyState == this.ws.OPEN)
@@ -482,8 +621,28 @@ export class Client extends EventEmitter {
 		const json: ApiResponse<LoginResponseData> = await resp.json();
 		if (json.error != 0)
 			throw `Error while logging in. Error: ${json.message}`;
-		this.userId = json.payload.userId;
 		this.token = json.payload.token;
 		this.connect()
+	}
+	loginToken(token: string): Promise<void> {
+		if (this.ws && this.ws.readyState == this.ws.OPEN)
+			this.ws.close();
+		this.token = token;
+		this.connect()
+		return new Promise((resolve, reject) => {
+			function handleAuthStatus(data: AuthStatusPacket) {
+				if (!data.payload.success)
+					return reject(data.payload.error?.toString())
+				resolve()
+			}
+			this.once('authStatus', handleAuthStatus)
+			// deno-lint-ignore no-this-alias
+			const client = this;
+			setTimeout(function () {
+				client.off('authStatus', handleAuthStatus);
+				reject('authStatus timeout');
+			}, 5000)
+		})
+		// authStatus
 	}
 }
