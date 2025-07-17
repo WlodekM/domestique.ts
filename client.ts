@@ -64,6 +64,94 @@ type ApiResponse<t> = {
 	error: 0, payload: t, message?: string
 } | { error: number, payload: t, message: string }
 
+interface QueueRequest {
+	path: string,
+	args: RequestInit,
+	resolve: (response: Response) => void;
+	reject: (...args: any[]) => void;
+}
+
+interface Queue {
+	requests: QueueRequest[],
+	cooldown: number,
+	lock: boolean
+}
+
+
+// will use when v1 comes out
+// deno-lint-ignore no-unused-vars
+class RequestManager {
+	queues: Record<string, Queue> = {};
+	cacheMonster: CacheMonster
+	constructor(cacheMonster: CacheMonster) {
+		this.cacheMonster = cacheMonster;
+	}
+	async doRequest(category: string): Promise<void> {
+		if (!this.queues[category] || this.queues[category].requests.length < 1)
+			throw 'what'
+		if (this.queues[category].lock)
+			return;
+		this.queues[category].lock = true;
+		if (this.queues[category].cooldown < Date.now()) {
+			const remaining = this.queues[category].cooldown - Date.now();
+			setTimeout(()=>{
+				this.queues[category].lock = false;
+				this.doRequest(category)
+			}, remaining);
+			return;
+		}
+		const requestData: QueueRequest = this.queues[category].requests.at(-1) as QueueRequest;
+		let resp
+		try {
+			resp = await fetch(
+				this.cacheMonster.apiUrl+'/api/v1'+requestData.path,
+				requestData.args
+			);
+		} catch (error) {
+			requestData.reject(error)
+			this.queues[category].requests.shift()
+			this.queues[category].lock = false;
+			return;
+		}
+		// ratelimited
+		if (resp.status == 429) {
+			// const json = await resp.json();
+			const remaining: number =
+				+(resp.headers.get("X-Timeout-Remaining-Milliseconds") as string)
+			this.queues[category].cooldown =
+				//@ts-ignore::
+				Date.now()+ remaining;
+			setTimeout(()=>{
+				this.queues[category].lock = false;
+				this.doRequest(category)
+			}, remaining);
+			return;
+		}
+		requestData.resolve(resp);
+		this.queues[category].requests.shift()
+		this.queues[category].lock = false;
+	}
+	fetch(path: string, init: RequestInit): Promise<Response> {
+		return new Promise((resolve, reject) => {
+			const category = path.split('/').slice(0, 2).join('/');
+			if (!this.queues[category])
+				this.queues[category] = {
+					cooldown: -Infinity,
+					requests: [],
+					lock: false
+				};
+			this.queues[category].requests.push({
+				args: init,
+				path,
+				resolve,
+				reject
+			})
+			if (this.queues[category].cooldown < Date.now())
+				this.doRequest(category)
+		})
+	}
+}
+
 class CacheManager {
 	cache: Record<string, Record<string, any>> = {};
 	get(category: string, item: string) {
@@ -431,6 +519,7 @@ export class Client extends EventEmitter {
 	userId: string = '';
 	self?: SelfUser
 	guilds: GuildManager;
+	doReconnect: boolean;
 	set token(token: string) {
 		this._token = token;
 		this.cache.token = token;
@@ -494,8 +583,19 @@ export class Client extends EventEmitter {
 			}
 			client.emit(data.type, data)
 		})
+		this.ws.addEventListener('close', async () => {
+			if (!client.doReconnect)
+				return;
+			if (!client.token)
+				return;
+			await client.loginToken(client.token)
+		})
 	}
-	constructor(wsurl: string = "wss://api.chat.eqilia.eu/api/v0/live/ws", apiurl: string = "https://api.chat.eqilia.eu") {
+	constructor(
+		wsurl: string = "wss://api.chat.eqilia.eu/api/v0/live/ws",
+		apiurl: string = "https://api.chat.eqilia.eu",
+		doReconnect: boolean = false
+	) {
 		super()
 		this.cache = new CacheMonster(apiurl);
 		this.cache.createCategory('guilds');
@@ -504,6 +604,7 @@ export class Client extends EventEmitter {
 		this.guilds = new GuildManager(this.cache);
 		this.apiUrl = apiurl
 		this.wsUrl = wsurl
+		this.doReconnect = doReconnect;
 	}
 	async login(username: string, password: string) {
 		if (this.ws && this.ws.readyState == this.ws.OPEN)
