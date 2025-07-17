@@ -1,3 +1,6 @@
 .env
 test.ts
 .vscode
+tui.ts
+pnpm-lock.yaml
+node_modules
