@@ -624,6 +624,21 @@ export class Client extends EventEmitter {
 		this.token = json.payload.token;
 		this.connect()
 	}
+	async register(username: string, password: string) {
+		const resp = await fetch(`${this.apiUrl}/api/v0/auth/register`, {
+			method: 'POST',
+			headers: {
+				'content-type': 'application/json'
+			},
+			body: JSON.stringify({ username, password })
+		})
+		if (!resp.ok && resp.headers.get('content-type') != 'application/json')
+			throw `Response code not OK; response code is ${resp.status}`;
+		const json: ApiResponse<LoginResponseData> = await resp.json();
+		if (json.error != 0)
+			throw `Error while logging in. Error: ${json.message}`;
+		return;
+	}
 	loginToken(token: string): Promise<void> {
 		if (this.ws && this.ws.readyState == this.ws.OPEN)
 			this.ws.close();
