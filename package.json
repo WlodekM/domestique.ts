@@ -1,5 +1,9 @@
 {
-	"dependencies": {
-		"eventemitter3": "^5.0.1"
+	"name": "dometique.ts",
+	"description": "a library for chat domestique",
+	"author": {
+		"email": "berry@goog-serch.eu.org",
+		"name": "berry :3",
+		"url": "https://wlodekm.nekoweb.org/new/"
 	}
 }

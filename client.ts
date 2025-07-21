@@ -1,5 +1,91 @@
 // deno-lint-ignore-file no-explicit-any no-case-declarations
-import { EventEmitter } from 'eventemitter3'
+interface EEEvent {
+	handler: (...args: any[]) => void;
+	eventName: string;
+	id: number;
+	once: boolean;
+}
+class EventEmitter {
+	private _handlers: Record<number, EEEvent> = {};
+	private _events: Record<string, EEEvent[]> = {};
+	private id: number = 0;
+
+	private _removeHandler(id: number) {
+		if (!this._handlers[id])
+			return;
+		const event: EEEvent = this._handlers[id];
+		// remove duplicate from _events
+		delete this._events[event.eventName]![
+			this._events[event.eventName]!.findIndex(e => e.id == id)
+		];
+		delete this._handlers[id];
+	}
+
+	offId(id: number) {
+		this._removeHandler(id);
+	}
+
+	off(eventName: string, listener: (...args: any[]) => void) {
+		let eventId: number | undefined = undefined;
+		for (const id in this._handlers) {
+			const event = this._handlers[id];
+			if (event.eventName !== eventName)
+				continue;
+			if (event.handler !== listener)
+				continue;
+			eventId = +id
+		}
+		if (eventId === undefined)
+			return;
+		this.offId(eventId);
+	}
+
+	private _on(eventName: string, listener: (...args: any[]) => void, once: boolean) {
+		const id: number = this.id++;
+		const event: EEEvent = {
+			eventName,
+			handler: listener,
+			id,
+			once,
+		};
+		this._handlers[id] = event;
+		if (this._events[eventName] === undefined)
+			this._events[eventName] = [];
+		this._events[eventName].push(event);
+		return id
+	}
+
+	on(eventName: "ready", listener: () => void): number
+	on(eventName: "message", listener: (message: MessageEvent) => void): number
+	on(eventName: string, listener: (...args: any[]) => void): number
+	on(eventName: string, listener: (...args: any[]) => void): number {
+		return this._on(eventName, listener, false);
+	}
+
+	once(eventName: "ready", listener: () => void): number
+	once(eventName: "message", listener: (message: MessageEvent) => void): number
+	once(eventName: string, listener: (...args: any[]) => void): number
+	once(eventName: string, listener: (...args: any[]) => void): number {
+		return this._on(eventName, listener, true);
+	}
+
+	emit(eventName: "ready"): void
+	emit(eventName: "message", message: MessageEvent): void
+	emit(eventName: string, ...args: any[]): void
+	emit(eventName: string, ...args: any[]): void {
+		if (this._events[eventName] === undefined)
+			this._events[eventName] = [];
+		for (const event of this._events[eventName]) {
+			event.handler(...args);
+		}
+	}
+}
+
+interface MessageEvent {
+	message: CMessage,
+	guild: string,
+	channel: string
+}
 
 interface Channel {
 	id: string
@@ -569,7 +655,7 @@ export class Client extends EventEmitter {
 					await message.load();
 					
 					client.emit('message', {
-						message: message,
+						message: message as CMessage,
 						guild: (data as unknown as any).payload.guildId,
 						channel: (data as unknown as any).payload.channelId
 					})
