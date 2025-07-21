@@ -15,11 +15,10 @@ class EventEmitter {
 			return;
 		const event: EEEvent = this._handlers[id];
 		// remove duplicate from _events
-		delete this._events[event.eventName][
+		this._events[event.eventName].splice(
 			this._events[event.eventName]
-				.filter(e => e) // <- filter for non-deleted events
 				.findIndex(e => e.id == id)
-		];
+		);
 		delete this._handlers[id];
 	}
 
