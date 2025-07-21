@@ -342,11 +342,13 @@ export class CUser {
 	verified: number
 	displayName: string
 	isAdmin: number
-	constructor(user: User) {
+	id: string
+	constructor(user: User, id: string) {
 		this.username = user.username
 		this.verified = user.verified
 		this.displayName = user.displayName
 		this.isAdmin = user.isAdmin
+		this.id = id
 	}
 }
 
@@ -359,7 +361,7 @@ class SelfUser extends CUser {
 		return this.client._channels
 	}
 	constructor(user: User, client: Client) {
-		super(user);
+		super(user, client.userId);
 		this.client = client
 	}
 }
@@ -485,7 +487,7 @@ export class CMessage {
 	}
 	loaded: boolean = false;
 	async load() {
-		this.author = new CUser(await this._cache.getUser(this._author))
+		this.author = new CUser(await this._cache.getUser(this._author), this._author)
 		this.loaded = true;
 	}
 	constructor(cache: CacheMonster, message: Message, channel: CChannel) {
@@ -530,7 +532,7 @@ class UnloadedChannelMessage {
 	}
 	loaded: boolean = false;
 	async load() {
-		this.author = new CUser(await this._cache.getUser(this._author))
+		this.author = new CUser(await this._cache.getUser(this._author), this._author)
 		this.loaded = true;
 	}
 	constructor(cache: CacheMonster, message: Message, guildManager: GuildManager) {
