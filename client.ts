@@ -15,8 +15,10 @@ class EventEmitter {
 			return;
 		const event: EEEvent = this._handlers[id];
 		// remove duplicate from _events
-		delete this._events[event.eventName]![
-			this._events[event.eventName]!.findIndex(e => e.id == id)
+		delete this._events[event.eventName][
+			this._events[event.eventName]
+				.filter(e => e) // <- filter for non-deleted events
+				.findIndex(e => e.id == id)
 		];
 		delete this._handlers[id];
 	}
@@ -165,7 +167,6 @@ interface Queue {
 
 
 // will use when v1 comes out
-// deno-lint-ignore no-unused-vars
 class RequestManager {
 	queues: Record<string, Queue> = {};
 	cacheMonster: CacheMonster
@@ -217,7 +218,7 @@ class RequestManager {
 		this.queues[category].requests.shift()
 		this.queues[category].lock = false;
 	}
-	fetch(path: string, init: RequestInit): Promise<Response> {
+	private _fetchRatelimited(path: string, init: RequestInit): Promise<Response> {
 		return new Promise((resolve, reject) => {
 			const category = path.split('/').slice(0, 2).join('/');
 			if (!this.queues[category])
@@ -236,6 +237,10 @@ class RequestManager {
 				this.doRequest(category)
 		})
 	}
+	_fetch(path: string, init: RequestInit): Promise<Response> {
+		return fetch(path, init)
+	}
+	fetch = this._fetch;
 }
 
 class CacheManager {
@@ -274,16 +279,18 @@ class CacheManager {
 class CacheMonster extends CacheManager {
 	token: string | null = null;
 	apiUrl: string;
+	requests: RequestManager;
 	constructor(apiUrl: string) {
 		super()
 		this.apiUrl = apiUrl;
+		this.requests = new RequestManager(this);
 	}
 	async getUser(id: string): Promise<User> {
 		if (this.has('users', id))
 			return this.get('users', id);
 		if (!this.token)
 			console.warn('not signed in, expect higher ratelimits')
-		const resp = await fetch(`${this.apiUrl}/api/v0/data/user/${id}`, {
+		const resp = await this.requests.fetch(`${this.apiUrl}/api/v0/data/user/${id}`, {
 			headers: this.token ? {
 				authorization: this.token
 			} : {}
@@ -300,7 +307,7 @@ class CacheMonster extends CacheManager {
 			return this.get('channels', id);
 		if (!this.token)
 			throw "Can't fetch channels when not signed in";
-		const resp = await fetch(`${this.apiUrl}/api/v0/data/channel/${id}`, {
+		const resp = await this.requests.fetch(`${this.apiUrl}/api/v0/data/channel/${id}`, {
 			headers: {
 				authorization: this.token
 			}
@@ -317,7 +324,7 @@ class CacheMonster extends CacheManager {
 			return this.get('guilds', id);
 		if (!this.token)
 			throw "Can't fetch guilds when not signed in";
-		const resp = await fetch(`${this.apiUrl}/api/v0/data/guild/${id}`, {
+		const resp = await this.requests.fetch(`${this.apiUrl}/api/v0/data/guild/${id}`, {
 			headers: {
 				authorization: this.token
 			}
@@ -358,7 +365,7 @@ class SelfUser extends CUser {
 	}
 }
 
-class CGuild {
+export class CGuild {
 	_cache: CacheMonster
 	id: string
 	name: string
@@ -402,7 +409,7 @@ export class CChannel {
 			return;
 		if (!this._cache.token)
 			throw 'Cannot fetch messages when not logged in';
-		const resp = await fetch(`${this._cache.apiUrl}/api/v0/data/messages/${this.id}`, {
+		const resp = await this._cache.requests.fetch(`${this._cache.apiUrl}/api/v0/data/messages/${this.id}`, {
 			headers: {
 				authorization: this._cache.token
 			}
@@ -429,7 +436,7 @@ export class CChannel {
 	async send(content: string) {
 		if (!this._cache.token)
 			throw 'Cannot send messages when not logged in';
-		const resp = await fetch(`${this._cache.apiUrl}/api/v0/message/post`, {
+		const resp = await this._cache.requests.fetch(`${this._cache.apiUrl}/api/v0/message/post`, {
 			headers: {
 				authorization: this._cache.token,
 				'content-type': 'application/json'
@@ -606,6 +613,8 @@ export class Client extends EventEmitter {
 	self?: SelfUser
 	guilds: GuildManager;
 	doReconnect: boolean;
+
+	requests: RequestManager;
 	set token(token: string) {
 		this._token = token;
 		this.cache.token = token;
@@ -687,6 +696,7 @@ export class Client extends EventEmitter {
 		this.cache.createCategory('guilds');
 		this.cache.createCategory('channels');
 		this.cache.createCategory('users');
+		this.requests = this.cache.requests;
 		this.guilds = new GuildManager(this.cache);
 		this.apiUrl = apiurl
 		this.wsUrl = wsurl
@@ -695,7 +705,7 @@ export class Client extends EventEmitter {
 	async login(username: string, password: string) {
 		if (this.ws && this.ws.readyState == this.ws.OPEN)
 			this.ws.close();
-		const resp = await fetch(`${this.apiUrl}/api/v0/auth/login`, {
+		const resp = await this.requests.fetch(`${this.apiUrl}/api/v0/auth/login`, {
 			method: 'POST',
 			headers: {
 				'content-type': 'application/json'
@@ -711,7 +721,7 @@ export class Client extends EventEmitter {
 		this.connect()
 	}
 	async register(username: string, password: string) {
-		const resp = await fetch(`${this.apiUrl}/api/v0/auth/register`, {
+		const resp = await this.requests.fetch(`${this.apiUrl}/api/v0/auth/register`, {
 			method: 'POST',
 			headers: {
 				'content-type': 'application/json'
