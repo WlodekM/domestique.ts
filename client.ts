@@ -273,6 +273,11 @@ class CacheManager {
 		delete this.cache[category][item]
 		return true;
 	}
+	clearAll() {
+		for (const category in this.cache) {
+			delete this.cache[category]
+		}
+	}
 }
 
 /** FEED ME YOUR'E CACHE (intentional spelling mistake, don't @ me) */
