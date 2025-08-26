@@ -186,7 +186,8 @@ class RequestManager {
 			}, remaining);
 			return;
 		}
-		const requestData: QueueRequest = this.queues[category].requests.at(-1) as QueueRequest;
+		const requests = this.queues[category].requests;
+		const requestData: QueueRequest = requests[requests.length-1] as QueueRequest;
 		let resp
 		try {
 			resp = await fetch(
