@@ -733,7 +733,7 @@ export class Client extends EventEmitter {
 			throw `Response code not OK; response code is ${resp.status}`;
 		const json: ApiResponse<LoginResponseData> = await resp.json();
 		if (json.error != 0)
-			throw `Error while logging in. Error: ${json.message}`;
+			throw `Error while registering. Error: ${json.message}`;
 		return;
 	}
 	loginToken(token: string): Promise<void> {
