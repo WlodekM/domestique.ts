@@ -282,7 +282,7 @@ class CacheManager {
 	}
 	clearAll() {
 		for (const category in this.cache) {
-			delete this.cache[category]
+			this.cache[category] = {};
 		}
 	}
 }
