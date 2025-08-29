@@ -280,6 +280,11 @@ class CacheManager {
 		delete this.cache[category][item]
 		return true;
 	}
+	clearAll() {
+		for (const category in this.cache) {
+			delete this.cache[category]
+		}
+	}
 }
 
 /** FEED ME YOUR'E CACHE (intentional spelling mistake, don't @ me) */
@@ -760,7 +765,7 @@ export class Client extends EventEmitter {
 			throw `Response code not OK; response code is ${resp.status}`;
 		const json: ApiResponse<LoginResponseData> = await resp.json();
 		if (json.error != 0)
-			throw `Error while logging in. Error: ${json.message}`;
+			throw `Error while registering. Error: ${json.message}`;
 		return;
 	}
 	loginToken(token: string): Promise<void> {
