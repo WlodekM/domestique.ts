@@ -133,6 +133,13 @@ interface AuthStatusPacket extends WsPacket {
 	}
 }
 
+interface UsersOnlinePacket extends WsPacket {
+	type: 'usersOnline'
+	payload: {
+		users: string[]
+	}
+}
+
 interface Message {
 	messageId: string
 	authorId: string
@@ -601,6 +608,18 @@ class GuildManager {
 	}
 }
 
+class StatusManager {
+	_statuses: Map<string, string> = new Map();
+	setStatus(id: string, status: string) {
+		this._statuses.set(id, status)
+	}
+	onlineUsers(): string[] {
+		return [...this._statuses.entries()]
+			.filter(([, status]) => status == 'online')
+			.map(([id]) => id);
+	}
+}
+
 export class Client extends EventEmitter {
 	// guilds: string[];
 	// channels: string[];
@@ -615,6 +634,7 @@ export class Client extends EventEmitter {
 	self?: SelfUser
 	guilds: GuildManager;
 	doReconnect: boolean;
+	statusManager: StatusManager = new StatusManager();
 
 	requests: RequestManager;
 	set token(token: string) {
@@ -649,6 +669,12 @@ export class Client extends EventEmitter {
 				case 'serverFinished':
 					client.self = new SelfUser(await client.cache.getUser(client.userId) as User, client)
 					client.emit('ready');
+					break;
+				
+				case 'usersOnline':
+					for (const user of (data as UsersOnlinePacket).payload.users) {
+						this.statusManager.setStatus(user, 'online')
+					}
 					break;
 				
 				case 'messageCreate':
