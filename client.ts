@@ -500,6 +500,7 @@ export class CMessage {
 	}
 	loaded: boolean = false;
 	async load() {
+		if (this.loaded) return;
 		this.author = new CUser(await this._cache.getUser(this._author), this._author)
 		this.loaded = true;
 	}
