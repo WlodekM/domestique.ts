@@ -656,7 +656,6 @@ export class Client extends EventEmitter {
 		if (!this.token)
 			throw 'cannot connect before logging in';
 		this._guilds = [];
-		this._channels = [];
 		this.ws = new WebSocket(this.wsUrl, this.token);
 		// deno-lint-ignore no-this-alias
 		const client = this;
