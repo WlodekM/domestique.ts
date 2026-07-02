@@ -500,6 +500,7 @@ export class CMessage {
 	}
 	loaded: boolean = false;
 	async load() {
+		if (this.loaded) return;
 		this.author = new CUser(await this._cache.getUser(this._author), this._author)
 		this.loaded = true;
 	}
@@ -654,7 +655,9 @@ export class Client extends EventEmitter {
 	connect() {
 		if (!this.token)
 			throw 'cannot connect before logging in';
-		this.ws = new WebSocket(this.wsUrl, this.token)
+		this._guilds = [];
+		this._channels = [];
+		this.ws = new WebSocket(this.wsUrl, this.token);
 		// deno-lint-ignore no-this-alias
 		const client = this;
 		this.ws.addEventListener('message', async (e) => {
