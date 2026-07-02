@@ -792,19 +792,14 @@ export class Client extends EventEmitter {
 		if (this.ws && this.ws.readyState == this.ws.OPEN)
 			this.ws.close();
 		this.token = token;
-		this.connect()
+		this.connect();
 		return new Promise((resolve, reject) => {
-			function handleAuthStatus(data: AuthStatusPacket) {
-				if (!data.payload.success)
-					return reject(data.payload.error?.toString())
-				resolve()
-			}
-			this.once('ready', handleAuthStatus)
+			this.once('ready', resolve)
 			// deno-lint-ignore no-this-alias
 			const client = this;
 			setTimeout(function () {
 				client.off('ready', handleAuthStatus);
-				reject('authStatus timeout');
+				reject('ready timeout');
 			}, 5000)
 		})
 		// authStatus
