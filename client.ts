@@ -783,11 +783,11 @@ export class Client extends EventEmitter {
 					return reject(data.payload.error?.toString())
 				resolve()
 			}
-			this.once('authStatus', handleAuthStatus)
+			this.once('ready', handleAuthStatus)
 			// deno-lint-ignore no-this-alias
 			const client = this;
 			setTimeout(function () {
-				client.off('authStatus', handleAuthStatus);
+				client.off('ready', handleAuthStatus);
 				reject('authStatus timeout');
 			}, 5000)
 		})
