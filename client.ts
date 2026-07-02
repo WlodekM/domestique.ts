@@ -56,6 +56,7 @@ class EventEmitter {
 		return id
 	}
 
+	on(eventName: "preready", listener: () => void): number
 	on(eventName: "ready", listener: () => void): number
 	on(eventName: "message", listener: (message: MessageEvent) => void): number
 	on(eventName: string, listener: (...args: any[]) => void): number
@@ -63,6 +64,7 @@ class EventEmitter {
 		return this._on(eventName, listener, false);
 	}
 
+	once(eventName: "preready", listener: () => void): number
 	once(eventName: "ready", listener: () => void): number
 	once(eventName: "message", listener: (message: MessageEvent) => void): number
 	once(eventName: string, listener: (...args: any[]) => void): number
@@ -70,6 +72,7 @@ class EventEmitter {
 		return this._on(eventName, listener, true);
 	}
 
+	emit(eventName: "preready"): void
 	emit(eventName: "ready"): void
 	emit(eventName: "message", message: MessageEvent): void
 	emit(eventName: string, ...args: any[]): void
@@ -693,6 +696,7 @@ export class Client extends EventEmitter {
 						username: data.payload.username,
 						displayName: data.payload.displayName
 					} as User, client)
+					client.emit('preready');
 					client.emit('ready');
 					break;
 				
@@ -800,11 +804,11 @@ export class Client extends EventEmitter {
 				resolve();
 			}
 
-			this.once('ready', ready);
+			this.once('preready', ready);
 			// deno-lint-ignore no-this-alias
 			const client = this;
 			timeout = setTimeout(function () {
-				client.off('ready', ready);
+				client.off('preready', ready);
 				reject('ready timeout');
 			}, 5000)
 		})
