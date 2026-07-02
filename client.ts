@@ -687,6 +687,7 @@ export class Client extends EventEmitter {
 					break;
 
 				case 'initialUserData':
+					client.emit('preready');
 					// TODO: type declaration for initialUserData and serverIdentification
 					for (const id of (data as any).payload.presentGuildIds) {
 						client._guilds.push(id);
@@ -696,7 +697,6 @@ export class Client extends EventEmitter {
 						username: data.payload.username,
 						displayName: data.payload.displayName
 					} as User, client)
-					client.emit('preready');
 					client.emit('ready');
 					break;
 				
