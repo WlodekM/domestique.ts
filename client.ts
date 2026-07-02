@@ -252,9 +252,25 @@ class RequestManager {
 
 class CacheManager {
 	cache: Record<string, Record<string, any>> = {};
-	get(category: string, item: string) {
+	locks: Record<string, Record<string, [Promise<void>, (uh: any)=>void]>> = {};
+	lock(category: string, item: string) {
+		if (this.locks[category] == undefined)
+			return undefined;
+		const lock: [Promise<void>, (uh: any)=>void] =
+			[new Promise(r => lock[1] = r), () => {}];
+		this.locks[category][item] = lock;
+	}
+	release(category: string, item: string) {
+		if (this.locks[category] == undefined)
+			return undefined;
+		this.locks[category][item][1](this.cache[category]![item]!);
+	}
+	async get(category: string, item: string) {
 		if (this.cache[category] == undefined)
 			return undefined;
+		//@ts-ignore: fuck off typescript
+		if (!this.cache[category][item] && this.locks[category][item])
+			return await this.locks[category][item][0];
 		return this.cache[category][item]
 	}
 	set<T = any>(category: string, item: string, data: T): T | undefined {
@@ -299,7 +315,7 @@ class CacheMonster extends CacheManager {
 	}
 	async getUser(id: string): Promise<User> {
 		if (this.has('users', id))
-			return this.get('users', id);
+			return await this.get('users', id);
 		if (!this.token)
 			console.warn('not signed in, expect higher ratelimits')
 		const resp = await this.requests.fetch(`${this.apiUrl}/api/v0/data/user/${id}`, {
@@ -316,7 +332,7 @@ class CacheMonster extends CacheManager {
 	}
 	async getChannel(id: string): Promise<Channel> {
 		if (this.has('channels', id))
-			return this.get('channels', id);
+			return await this.get('channels', id);
 		if (!this.token)
 			throw "Can't fetch channels when not signed in";
 		const resp = await this.requests.fetch(`${this.apiUrl}/api/v0/data/channel/${id}`, {
@@ -333,7 +349,7 @@ class CacheMonster extends CacheManager {
 	}
 	async getGuild(id: string): Promise<Guild> {
 		if (this.has('guilds', id))
-			return this.get('guilds', id);
+			return await this.get('guilds', id);
 		if (!this.token)
 			throw "Can't fetch guilds when not signed in";
 		const resp = await this.requests.fetch(`${this.apiUrl}/api/v0/data/guild/${id}`, {
@@ -566,10 +582,10 @@ class UnloadedChannelMessage {
 class ChannelManager {
 	channelCache: Record<string, CChannel> = {};
 	cache: CacheMonster;
-	guild: CGuild
+	guild: CGuild;
 	async get(id: string) {
 		if (this.cache.has('channelClasses', id))
-			return this.cache.get('channelClasses', id)
+			return await this.cache.get('channelClasses', id)
 		const channel = new CChannel(this.cache, await this.cache.getChannel(id), this.guild);
 		this.cache.set('channelClasses', id, channel);
 		// await channel.load()
@@ -591,7 +607,7 @@ class GuildManager {
 	cache: CacheMonster;
 	async get(id: string) {
 		if (this.cache.has('guildClasses', id))
-			return this.cache.get('guildClasses', id)
+			return await this.cache.get('guildClasses', id)
 		const guild = new CGuild(this.cache, await this.cache.getGuild(id));
 		this.cache.set('guildClasses', id, guild);
 		await guild.load()
