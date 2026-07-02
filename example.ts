@@ -12,6 +12,8 @@ client.on('ready', () => {
 	console.log("ready")
 })
 
+client.debug = console.debug
+
 client.on('message', async ({ message }: { message: CMessage, channel: string, guild: string }) => {
 	//TODO: fix
 	// if (!message.loaded)

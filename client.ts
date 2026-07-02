@@ -104,19 +104,19 @@ interface Guild {
 
 export interface User {
 	username: string,
-	verified: number,
+	// verified: number,
 	displayName: string,
-	isAdmin: number
+	// isAdmin: number
 }
 
 interface WsPacket {
 	type: string
 }
 
-interface AvailablePacket extends WsPacket {
-	type: 'guildAvailable' | 'channelAvailable'
+interface GuildsAvailablePacket extends WsPacket {
+	type: 'guildsAvailable'
 	payload: {
-		uuid: string
+		guildIds: string[]
 	}
 }
 
@@ -645,13 +645,15 @@ class StatusManager {
 export class Client extends EventEmitter {
 	// guilds: string[];
 	// channels: string[];
+	debug: (...message: unknown[]) => void = _=>{};
 	cache: CacheMonster;
 	ws?: WebSocket;
 	apiUrl: string;
 	wsUrl: string;
 	private _token: string | null = null;
 	_guilds: string[] = [];
-	_channels: string[] = [];
+	/** @depracated doesnt work - dont use this */
+	_channels: string[];
 	userId: string = '';
 	self?: SelfUser
 	guilds: GuildManager;
@@ -670,28 +672,27 @@ export class Client extends EventEmitter {
 		if (!this.token)
 			throw 'cannot connect before logging in';
 		this._guilds = [];
-		this._channels = [];
 		this.ws = new WebSocket(this.wsUrl, this.token);
 		// deno-lint-ignore no-this-alias
 		const client = this;
 		this.ws.addEventListener('message', async (e) => {
-			// console.debug(`INC`, e.data)
-			const data: AuthStatusPacket | AvailablePacket | WsPacket = JSON.parse(e.data);
+			this.debug(`INC`, e.data)
+			const data: AuthStatusPacket | WsPacket = JSON.parse(e.data);
 			switch (data.type) {
 				case 'authStatus':
 					client.userId = (data as AuthStatusPacket).payload.userId
 					break;
 
-				case 'guildAvailable':
-					client._guilds.push((data as AvailablePacket).payload.uuid)
-					break;
-				
-				case 'channelAvailable':
-					client._channels.push((data as AvailablePacket).payload.uuid)
-					break;
-				
-				case 'serverFinished':
-					client.self = new SelfUser(await client.cache.getUser(client.userId) as User, client)
+				case 'initialUserData':
+					// TODO: type declaration for initialUserData and serverIdentification
+					for (const id of (data as any).payload.presentGuildIds) {
+						client._guilds.push(id);
+					}
+					client.userId = data.payload.id;
+					client.self = new SelfUser({
+						username: data.payload.username,
+						displayName: data.payload.displayName
+					} as User, client)
 					client.emit('ready');
 					break;
 				
@@ -739,8 +740,8 @@ export class Client extends EventEmitter {
 		})
 	}
 	constructor(
-		wsurl: string = "wss://api.chat.eqilia.eu/api/v0/live/ws",
-		apiurl: string = "https://api.chat.eqilia.eu",
+		wsurl: string = "wss://api.chatdomestique.fr/api/v0/live/ws",
+		apiurl: string = "https://api.chatdomestique.fr",
 		doReconnect: boolean = false
 	) {
 		super()
