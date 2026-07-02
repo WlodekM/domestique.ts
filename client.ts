@@ -794,11 +794,17 @@ export class Client extends EventEmitter {
 		this.token = token;
 		this.connect();
 		return new Promise((resolve, reject) => {
-			this.once('ready', resolve)
+			let timeout;
+			function ready() {
+				if (timeout) clearTimeout(timeout);
+				resolve();
+			}
+
+			this.once('ready', ready);
 			// deno-lint-ignore no-this-alias
 			const client = this;
-			setTimeout(function () {
-				client.off('ready', handleAuthStatus);
+			timeout = setTimeout(function () {
+				client.off('ready', ready);
 				reject('ready timeout');
 			}, 5000)
 		})
