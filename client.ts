@@ -143,6 +143,14 @@ interface UsersOnlinePacket extends WsPacket {
 	}
 }
 
+interface InitialUserDataPacket extends WsPacket {
+	type: 'initialUserData'
+	payload: {
+		id: string
+		presentGuildIds: string[]
+	}
+}
+
 interface Message {
 	messageId: string
 	authorId: string
@@ -371,15 +379,15 @@ class CacheMonster extends CacheManager {
 
 export class CUser {
 	username: string
-	verified: number
+	// verified: number
 	displayName: string
-	isAdmin: number
+	// isAdmin: number
 	id: string
 	constructor(user: User, id: string) {
 		this.username = user.username
-		this.verified = user.verified
+		// this.verified = user.verified
 		this.displayName = user.displayName
-		this.isAdmin = user.isAdmin
+		// this.isAdmin = user.isAdmin
 		this.id = id
 	}
 }
@@ -634,7 +642,7 @@ class GuildManager {
 }
 
 class StatusManager {
-	_statuses: Map<string, string> = new Map();
+	_statuses: Map<string, string> = new Map;
 	setStatus(id: string, status: string) {
 		this._statuses.set(id, status)
 	}
@@ -645,24 +653,43 @@ class StatusManager {
 	}
 }
 
+/**
+ * a chat domestique v0 client
+ */
 export class Client extends EventEmitter {
 	// guilds: string[];
 	// channels: string[];
 	debug: (...message: unknown[]) => void = _=>{};
+	/**
+	 * an instance of CacheMonster.
+	 * this is passed down to all child *Manager's and therefore C* (CGuild, etc.)
+	 * it is used to manage cache
+	 */
 	cache: CacheMonster;
 	ws?: WebSocket;
 	apiUrl: string;
 	wsUrl: string;
 	private _token: string | null = null;
 	_guilds: string[] = [];
-	/** @depracated doesnt work - dont use this */
-	_channels: string[];
+	/** @deprecated doesnt work - dont use this */
+	_channels: string[] = [];
+	/** your id */
 	userId: string = '';
+	/** whether ready was emitted */
+	isReady: boolean = false;
+	/** * It's you! */
 	self?: SelfUser
+	/** an instance of GuildManager, the prime way of accessing the guilds the user is in */
 	guilds: GuildManager;
+	/** whether to reconnect when disconnected. WARNING - buggy */
 	doReconnect: boolean;
-	statusManager: StatusManager = new StatusManager();
+	/** @deprecated status manager, which isnt a feature in the latest v0 */
+	statusManager: StatusManager = new StatusManager;
 
+	/** wuh
+	 * what even is this
+	 * honestly i forgot
+	 */
 	requests: RequestManager;
 	set token(token: string) {
 		this._token = token;
@@ -680,7 +707,7 @@ export class Client extends EventEmitter {
 		const client = this;
 		this.ws.addEventListener('message', async (e) => {
 			this.debug(`INC`, e.data)
-			const data: AuthStatusPacket | WsPacket = JSON.parse(e.data);
+			const data: InitialUserDataPacket | AuthStatusPacket | WsPacket = JSON.parse(e.data);
 			switch (data.type) {
 				case 'authStatus':
 					client.userId = (data as AuthStatusPacket).payload.userId
@@ -692,12 +719,19 @@ export class Client extends EventEmitter {
 					for (const id of (data as any).payload.presentGuildIds) {
 						client._guilds.push(id);
 					}
-					client.userId = data.payload.id;
-					client.self = new SelfUser({
-						username: data.payload.username,
-						displayName: data.payload.displayName
-					} as User, client)
-					client.emit('ready');
+					client.userId = (data as InitialUserDataPacket).payload.id;
+					client.self = new SelfUser(
+						await client.cache.getUser(client.userId) as User,
+						client
+					)
+					// let shit use preready first, mitigates race conditions
+					// maybe
+					// probably
+					// i hope
+					setTimeout(() => {
+						client.emit('ready');
+						this.isReady = true;
+					})
 					break;
 				
 				case 'usersOnline':
@@ -798,7 +832,8 @@ export class Client extends EventEmitter {
 		this.token = token;
 		this.connect();
 		return new Promise((resolve, reject) => {
-			let timeout;
+			// deno-lint-ignore prefer-const
+			let timeout: number;
 			function ready() {
 				if (timeout) clearTimeout(timeout);
 				resolve();
